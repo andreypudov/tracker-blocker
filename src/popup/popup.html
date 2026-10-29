@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Tracker Blocker</title>
+    <link rel="stylesheet" href="popup.css" />
+    <script src="popup.js" defer></script>
+  </head>
+  <body>
+    <main class="popup" data-status="loading">
+      <header class="popup__header">
+        <img class="popup__logo" src="../icons/icon.svg" alt="" width="24" height="24" />
+        <h1 class="popup__title">Tracker Blocker</h1>
+      </header>
+
+      <section class="site">
+        <p class="site__host" id="host">…</p>
+        <p class="site__status" id="status" aria-live="polite"></p>
+      </section>
+
+      <label class="toggle">
+        <span class="toggle__label">Protect this site</span>
+        <input class="toggle__input" id="toggle" type="checkbox" role="switch" disabled />
+        <span class="toggle__track" aria-hidden="true"></span>
+      </label>
+
+      <section class="stats">
+        <p class="stats__count" id="count">0</p>
+        <p class="stats__label">tracking events blocked on this tab</p>
+      </section>
+
+      <p class="popup__note">Everything stays on your device.</p>
+    </main>
+  </body>
+</html>

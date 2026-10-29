@@ -1,0 +1,435 @@
+#+TITLE: Tracker Blocker
+#+DESCRIPTION: Privacy extension that stops websites and third-party scripts from tracking you, without breaking the sites you use.
+
+Tracker Blocker is a browser extension that stops websites and third-party
+scripts from tracking what you do on the web. It is built as a set of
+independent protection modules, each covering one tracking area, behind a
+small platform layer so it can support more than one browser.
+
+Two principles apply to every module:
+
+- *Invisible.* Pages must not be able to tell that the extension is
+  installed: hooks look native, and nothing is added to the page.
+- *Non-breaking.* The site's own functionality keeps working; only tracking
+  is starved. Protection can be switched off per site from the toolbar popup.
+
+Everything runs locally. Nothing is collected, stored remotely or
+transmitted.
+
+* Contents                                                         :TOC:
+- [[#status][Status]]
+- [[#features][Features]]
+- [[#install][Install]]
+- [[#development][Development]]
+- [[#architecture][Architecture]]
+- [[#permissions][Permissions]]
+- [[#privacy][Privacy]]
+- [[#invisibility][Invisibility]]
+- [[#known-limitations-and-detection-vectors][Known limitations and detection vectors]]
+- [[#next-steps][Next steps]]
+- [[#license][License]]
+
+* Status
+:PROPERTIES:
+:CUSTOM_ID: status
+:END:
+
+| Area                      | State                                                            |
+|---------------------------+------------------------------------------------------------------|
+| Browsers                  | Firefox 142+ (Manifest V3). Other browsers are planned.          |
+| Mouse & keyboard tracking | Implemented: session replay, heatmaps, keyloggers, input timing  |
+| Network trackers          | Planned                                                          |
+| Cookies & storage         | Planned                                                          |
+| Fingerprinting            | Planned                                                          |
+
+The sections below describe the current implementation; see
+[[*Next steps][Next steps]] for the roadmap.
+
+* Features
+:PROPERTIES:
+:CUSTOM_ID: features
+:END:
+
+Mouse and keyboard tracking protection (=input-tracking= module):
+
+- Neutralises mouse, pointer, touch, wheel, scroll and keyboard/input
+  listeners registered by third-party scripts through =addEventListener= or
+  =on*= handler properties.
+- Blocks known session-replay / behavioural-analytics vendors entirely,
+  including self-hosted recorders recognised by file name (=rrweb*.js=, …).
+- Keeps first-party behaviour intact, including typing, clicks, drag and
+  drop, and third-party widgets such as maps and buttons on their own elements.
+- Coarsens =event.timeStamp= of input events (100 ms for keys, 16 ms for
+  pointer events) to blunt keystroke and mouse dynamics.
+- Covers fresh same-origin iframes, a classic way to grab pristine built-ins.
+
+Common to all modules:
+
+- Toolbar popup showing the current site, an on/off toggle per site and a
+  per-tab counter of blocked events (also shown as the toolbar badge).
+- No runtime dependencies. Nothing is collected or transmitted.
+
+* Install
+:PROPERTIES:
+:CUSTOM_ID: install
+:END:
+
+Requires Firefox 142 or newer and Node.js 22.12+ (for building).
+
+#+begin_src sh
+npm install
+npm run build          # produces dist/
+#+end_src
+
+** Temporary install via about:debugging
+
+1. Open =about:debugging#/runtime/this-firefox=.
+2. Click *Load Temporary Add-on…* and select =dist/manifest.json=.
+3. Pin the *Tracker Blocker* toolbar button to see the popup.
+
+** Using web-ext
+
+#+begin_src sh
+npm start
+#+end_src
+
+This builds the extension, serves the test page on =http://localhost:8080/=
+and launches a clean Firefox profile with the extension installed. If Firefox
+is not in a standard location, point at it explicitly:
+
+#+begin_src sh
+WEB_EXT_FIREFOX=/path/to/firefox npm start
+#+end_src
+
+** Packaging
+
+#+begin_src sh
+npm run package        # web-ext-artifacts/tracker_blocker-<version>.zip
+#+end_src
+
+* Development
+:PROPERTIES:
+:CUSTOM_ID: development
+:END:
+
+| Script                   | What it does                                                        |
+|--------------------------+---------------------------------------------------------------------|
+| =npm start=              | Build, serve fixtures, run Firefox with the extension (=web-ext run=) |
+| =npm run build=          | Bundle TypeScript with esbuild into =dist/= (self-contained IIFEs)   |
+| =npm run typecheck=      | =tsc --noEmit= in strict mode                                       |
+| =npm run lint=           | ESLint (typescript-eslint, strict type-checked) and =web-ext lint=  |
+| =npm test=               | Vitest unit tests                                                   |
+| =npm run test:e2e=       | End-to-end check in headless Firefox (see below)                    |
+| =npm run serve:fixtures= | Serve the manual test page only                                     |
+| =npm run package=        | Build a distributable zip with =web-ext build=                      |
+
+Tooling: TypeScript 7 (strict, ES2022, ES modules), esbuild, web-ext,
+ESLint + typescript-eslint, Vitest, =@types/firefox-webext-browser=.
+TypeScript 7 ships no compiler API yet, so, as recommended by the TypeScript
+team, =typescript= is an npm alias for =@typescript/typescript6= (the TS 6
+API that typescript-eslint loads) and TypeScript 7 is installed as
+=@typescript/native=, which provides =tsc=. CSS uses native nesting, custom
+properties, =:is()= / =:where()= and logical properties, with no
+preprocessor.
+
+** Tests
+
+- *Unit tests* (=tests/*.test.ts=) cover the pure protection logic: stack
+  parsing, caller classification, the delivery policy, timestamp coarsening,
+  the listener registry, native-function masking, and an integration test that
+  runs the real input-tracking module against a small fake DOM
+  (=tests/helpers/fake-dom.ts=).
+- *End-to-end* (=scripts/e2e.mjs=) starts headless Firefox with Marionette
+  (no extra dependencies) and installs =dist/= as a temporary add-on. It sends
+  real, trusted mouse and keyboard input to the fixture page and asserts what
+  first- and third-party scripts observed, including the invisibility
+  checks. Set =FIREFOX=/path/to/firefox= if =firefox= is not on =PATH=.
+- *Manual test page* (=tests/fixtures/=): =npm run serve:fixtures=, then open
+  =http://localhost:8080/=. The page is first-party; it loads a keylogger /
+  mouse tracker from =http://127.0.0.1:8081/= (a different site) and a
+  self-hosted =vendor/rrweb-recorder.js=. Counters show what each party
+  receives, and an "Invisibility checks" table runs common detection tricks.
+  Turn protection off in the popup to see the tracker light up.
+
+** Project layout
+
+#+begin_example
+manifest.json                 MV3 manifest (copied to dist/)
+icons/                        toolbar / add-on icon (SVG)
+scripts/                      build, start, fixture server, e2e runner
+src/
+  background/                 event page: per-tab state, badge
+  content/
+    index.ts                  entry: document_start, all frames
+    platform.ts               Firefox Xray layer (waive, xray, exportFunction)
+    native-mask.ts            replace built-ins with native-looking functions
+    realm.ts                  apply modules to a realm and its child iframes
+    bridge.ts                 isolated-world settings sync and counter
+    modules/
+      types.ts                ProtectionModule interface
+      index.ts                list of enabled modules
+      input-tracking/         mouse and keyboard protection
+        stack.ts              parse Error#stack script URLs
+        classify.ts           first-party / third-party / tracker
+        policy.ts             should a wrapped listener see this event?
+        registry.ts           listener <-> wrapper mapping
+        timestamp.ts          event.timeStamp coarsening
+        gesture.ts            is a drag in progress? (invisible listeners)
+        dom.ts                editable targets, global targets
+        index.ts              wires the hooks into a realm
+  popup/                      popup.html, popup.css (native nesting), popup.ts
+  shared/                     event taxonomy, settings, messages, site helpers
+tests/                        Vitest suites, fake DOM, fixtures/
+#+end_example
+
+* Architecture
+:PROPERTIES:
+:CUSTOM_ID: architecture
+:END:
+
+** Chosen approach: isolated world + Xray vision
+
+Two options were evaluated for hooking the page's event APIs at
+=document_start=:
+
+1. A =world: "MAIN"= content script that patches =EventTarget.prototype= from
+   inside the page.
+2. A regular (isolated-world) content script that reaches into the page with
+   Firefox's Xray helpers: =wrappedJSObject= / =XPCNativeWrapper.unwrap= to
+   touch page objects, and =exportFunction= to install replacements.
+
+Tracker Blocker uses *option 2*, because it is stronger on every invisibility
+requirement:
+
+- *No stack-trace leaks.* Frames of the extension's code are not visible in
+  page-observable =Error#stack= (the page's principal does not subsume the
+  content script's), so =moz-extension://= URLs never appear. A MAIN-world
+  script shows up in every stack that passes through a hook.
+- *Native-looking functions for free.* =exportFunction= creates a genuine
+  native forwarder in the page realm, so =Function.prototype.toString()=
+  prints =function addEventListener() { [native code] }= without patching
+  =Function.prototype.toString= (itself a well-known detection vector).
+- *Tamper-proof internals.* The extension's own built-ins (=Reflect=, =WeakMap=,
+  =Error=, …) live in a separate realm the page cannot reach or poison.
+- *No bridge to hide.* Settings and counters stay in the isolated world and
+  travel over =browser.runtime= / =browser.storage=. There are no custom
+  events, DOM attributes or =postMessage= traffic for the page to observe.
+
+The cost is Firefox specificity. Chrome has no Xray vision, so a Chrome port
+will need a MAIN-world variant behind the same =Platform= interface
+(=src/content/platform.ts=).
+
+** What gets hooked (per realm)
+
+- =EventTarget.prototype.addEventListener= / =removeEventListener=.
+- The tracked =on*= handler accessors (=onmousemove=, =onkeydown=, …) on
+  =window=, =Document=, =HTMLElement=, =SVGElement=, =MathMLElement=,
+  =Element=. Their getters return exactly what the page assigned.
+- =Event.prototype.timeStamp= (getter).
+- =contentWindow= / =contentDocument= of =<iframe>=, =<frame>= and
+  =<object>=: the first access to a same-origin child realm protects it before
+  the page can use it.
+
+Each replacement keeps the original's =name=, =length=, =toString()= output,
+property descriptor flags and position in the property order. Calls go to the
+original natives, captured at =document_start= before any page script runs,
+so argument conversion and error behaviour (including =TypeError= for
+illegal invocations) are the browser's own.
+
+** Telling first-party use from tracking
+
+When a listener for a tracked event type is registered, the hook captures the
+call stack (from the extension realm, which can see page frames) and
+classifies the caller:
+
+| Caller        | How it is recognised                                                           |
+|---------------+--------------------------------------------------------------------------------|
+| =tracker=     | any frame from a known replay/analytics vendor, or a recorder file name (=rrweb=, …) |
+| =first-party= | innermost non-library frame is same-site as the frame's origin; or no attributable frame |
+| =third-party= | innermost non-library frame is from another site, or an opaque (=data:=) script  |
+
+Frames from public library CDNs (=cdnjs=, =jsDelivr=, =unpkg=,
+=code.jquery.com=, …) are skipped. jQuery loaded from a CDN but called by the
+site's own code is therefore attributed to the site. "Same site" uses an
+approximate registrable domain (see limitations).
+
+First-party listeners are registered untouched. Third-party and tracker
+listeners are registered through a wrapper. The wrapper is created once per
+listener, so =addEventListener= de-duplication and =removeEventListener= keep
+native semantics. At dispatch time the wrapper applies the delivery policy
+(=src/content/modules/input-tracking/policy.ts=):
+
+| Event group                              | Third-party listener                                            | Tracker     |
+|------------------------------------------+-----------------------------------------------------------------+-------------|
+| Keys / text input in an editable field   | blocked                                                         | blocked     |
+| Keys elsewhere (shortcuts)               | delivered                                                       | blocked     |
+| Pointer streams on window/document/html/body | blocked, except during a drag gesture                      | blocked     |
+| Clicks / presses on window/document/html/body | blocked, except the release that ends a drag              | blocked     |
+| Anything on a specific element           | delivered (widgets, maps, buttons)                              | blocked     |
+| Synthetic events (=isTrusted === false=) | delivered                                                       | delivered   |
+| Untracked event types                    | never wrapped                                                   | never wrapped |
+
+Blocked events are dropped silently. The listener simply isn't called, and
+the counter is incremented in the isolated world. Synthetic events are always
+delivered, so a tracker's self-test (=dispatchEvent(new MouseEvent(…))=)
+still succeeds. The "drag gesture" state comes from listeners the content
+script registers through Xray, which the page cannot see.
+
+** Timestamp coarsening
+
+=event.timeStamp= of tracked input events is floored to 100 ms for keyboard
+events and 16 ms (about one frame) for pointer events. Flooring is monotonic,
+so event order is preserved. Animation clocks (=performance.now()=,
+=requestAnimationFrame= timestamps) are deliberately left alone so
+animations stay smooth.
+
+** Per-site toggle
+
+Disabled sites are stored as a list of hostnames under =disabledSites= in
+=browser.storage.local=. Storage is asynchronous but the hooks must be in
+place before the first page script runs, so protection is installed
+synchronously and starts enabled. Once the setting arrives, a disabled site
+switches to pass-through. Toggling in the popup takes effect immediately,
+without a reload. Sub-frames follow the setting of the tab's top-level site,
+which they learn from the background page.
+
+** Adding modules
+
+A protection is a =ProtectionModule= (=src/content/modules/types.ts=) with a
+=protect(realm)= method. It receives the realm's Xray and page views, the
+masking platform, the shared enabled state and a =reportBlocked()= callback.
+List new modules in =src/content/modules/index.ts=. They automatically apply
+to every frame and to guarded child iframes. Background-side features (for
+example network blocking with =declarativeNetRequest=) belong in
+=src/background/=.
+
+* Permissions
+:PROPERTIES:
+:CUSTOM_ID: permissions
+:END:
+
+| Permission                      | Why                                                                              |
+|---------------------------------+----------------------------------------------------------------------------------|
+| =storage=                       | Per-site on/off list (=storage.local=) and per-tab counters (=storage.session=, memory only) |
+| Content script on =<all_urls>=  | Hooks must be installed at =document_start= in every frame, before page scripts run |
+
+No =tabs=, =activeTab=, =scripting=, =webRequest= or extra host permissions
+are requested. The popup learns the tab's site from the content script's own
+report instead of reading tab URLs. The manifest declares
+=data_collection_permissions: none=.
+
+* Privacy
+:PROPERTIES:
+:CUSTOM_ID: privacy
+:END:
+
+- Nothing is collected, stored remotely or transmitted, and there is no
+  telemetry or network access of any kind.
+- The only persistent data is the list of hostnames where you switched
+  protection off (=browser.storage.local=).
+- Blocked-event counters are per tab and kept in =browser.storage.session=,
+  which lives in memory and is cleared when the browser closes. They contain
+  counts and the tab's hostname, never event contents.
+- Page content, keystrokes and pointer positions are never read, stored or
+  logged by the extension. Only the event type and target kind are inspected
+  to decide on delivery.
+
+* Invisibility
+:PROPERTIES:
+:CUSTOM_ID: invisibility
+:END:
+
+Measures taken (all verified by the fixture's "Invisibility checks"):
+
+- Replaced functions print as =[native code]=, keep =name=, =length=, own
+  keys (=length=, =name=), descriptor flags and property order, and have no
+  =prototype=. =Function.prototype.toString= itself is never touched.
+- No globals, DOM nodes, attributes, custom events or =postMessage= are
+  added. Counters live outside the page.
+- No =moz-extension://= URLs in page-visible stacks, and exceptions thrown by
+  wrapped listeners still reach =window.onerror= with the page's source.
+- Illegal invocations and missing arguments throw the browser's own
+  =TypeError=s. Non-string event types are converted exactly once, as the
+  native does.
+- Internal failures degrade silently to native behaviour; nothing is logged
+  to the page console.
+
+* Known limitations and detection vectors
+:PROPERTIES:
+:CUSTOM_ID: known-limitations-and-detection-vectors
+:END:
+
+Things a determined page can still notice, or ways around the protection:
+
+- *Exported functions are constructible.* Firefox marks every
+  =exportFunction= forwarder as a constructor: =new
+  EventTarget.prototype.addEventListener()= throws a =SecurityError=
+  =DOMException= instead of a =TypeError=, and
+  =Reflect.construct(Object, [], addEventListener)= does not throw. The
+  alternative (a =Proxy= over the native) would break =toString()= output,
+  the far more common check. The fixture reports this as a "known limitation".
+- *Behavioural difference.* A third-party listener on =document= never
+  receives trusted =mousemove= events while a first-party one does. A site
+  that cooperates with a tracker (or compares the two) can infer the
+  extension. The same applies to coarsened =event.timeStamp= values, though
+  Firefox's own =privacy.resistFingerprinting= also coarsens timers.
+- *Timing.* Registering a listener for a tracked type captures a stack trace,
+  which adds measurable overhead to =addEventListener=. Extra (hidden) stack
+  frames can also slightly change the maximum recursion depth.
+- *Other sources of the same data.* Polling =input.value=, =MutationObserver=
+  on form fields, =:hover= / =elementFromPoint= probing, scroll position
+  polling, =performance.now()= / =Date.now()= read inside allowed listeners,
+  and =FormData= on submit are not blocked. Doing so would break sites.
+- *Attribution is heuristic.* Third-party code invoked synchronously from
+  first-party code (or vice versa) is attributed to the innermost non-library
+  frame. Trackers served from the site's own domain (or CNAME-cloaked) look
+  first-party unless their file name matches a known recorder. Inline
+  =onmousemove="…"= HTML attributes are always treated as first-party. "Same
+  site" uses a small built-in list of multi-label public suffixes rather than
+  the full Public Suffix List.
+- *Element-level listeners are allowed* for third parties, so a tracker
+  attaching to a large wrapper element instead of =document= still receives
+  pointer events over it. Keystrokes into editable fields are blocked
+  regardless of where the listener is attached.
+- *Child realms.* Same-origin iframes are protected when reached through
+  =contentWindow= / =contentDocument=. =window.frames[i]=, =window[i]= and
+  =window.open()= can still return a realm before the content script is
+  injected into it. Closed shadow roots hide the real (editable) target, so
+  typing into a closed-shadow input is classified by its host element.
+- *Disabled is pass-through, not absent.* Because storage is asynchronous, the
+  hooks are installed even on disabled sites; they just forward everything
+  unchanged.
+- *Third-party widgets inside the page* that rely on page-wide click delegation
+  or on reading keystrokes in their own inline (non-iframe) text fields may
+  misbehave. Switch the site off in the popup if something breaks.
+
+* Next steps
+:PROPERTIES:
+:CUSTOM_ID: next-steps
+:END:
+
+1. *Session-replay script blocking at the network level.* Block known
+   recorder endpoints and scripts with =declarativeNetRequest= so they never
+   load. This also stops data already captured through other channels from
+   leaving.
+2. *Network tracker blocking.* Filter-list support (EasyPrivacy-style) as a
+   separate background module, with list updates and per-site exceptions.
+3. *Cookies and storage.* Third-party cookie / storage partitioning helpers
+   and automatic clean-up for tracker domains.
+4. *Fingerprinting protection.* Canvas, WebGL, audio, fonts and hardware
+   concurrency as further =ProtectionModule=s using the same masking
+   platform.
+5. *True zero-touch on disabled sites.* Register the content script
+   dynamically (=scripting.registerContentScripts= with =excludeMatches=) so
+   disabled sites get no hooks at all.
+6. *Better attribution.* Bundle the Public Suffix List, add a user-editable
+   list of trusted script hosts, and offer a stricter per-site mode that also
+   blocks element-level third-party listeners.
+7. *Chrome port.* A MAIN-world implementation of the =Platform= interface.
+
+* License
+:PROPERTIES:
+:CUSTOM_ID: license
+:END:
+
+Licensed under the [[file:LICENSE][Apache License, Version 2.0]].

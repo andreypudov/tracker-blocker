@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Tracker Blocker",
+  "version": "0.1.0",
+  "description": "Stops websites and third-party scripts from tracking you, without breaking the sites you use.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tracker-blocker@andreypudov",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  "permissions": ["storage"],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "action": {
+    "default_title": "Tracker Blocker",
+    "default_popup": "popup/popup.html",
+    "default_icon": "icons/icon.svg"
+  },
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ]
+}

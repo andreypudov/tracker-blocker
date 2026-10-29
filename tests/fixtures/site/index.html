@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tracker Blocker test page</title>
+    <style>
+      :root { font: 15px/1.5 system-ui, sans-serif; color-scheme: light dark; }
+      body { max-inline-size: 60rem; margin: 2rem auto; padding-inline: 1rem; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; }
+      .card { border: 1px solid #8884; border-radius: 0.5rem; padding: 1rem;
+        & h2 { margin-block: 0 0.5rem; font-size: 1rem; }
+        & table { inline-size: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+        & td { padding-block: 0.1rem; }
+        & td:last-child { text-align: end; }
+      }
+      .pass { color: #15803d; } .known { color: #b45309; } .fail { color: #b91c1c; font-weight: 600; }
+      #drag-box { block-size: 6rem; border: 2px dashed #8888; border-radius: 0.5rem; display: grid; place-items: center; user-select: none; }
+      input { inline-size: 100%; margin-block: 0.25rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Tracker Blocker test page</h1>
+    <p>
+      This page is the <strong>first party</strong> (<code>localhost:8080</code>). It loads a keylogger / mouse
+      tracker from a <strong>third party</strong> (<code>127.0.0.1:8081</code>) and a self-hosted
+      <code>rrweb-recorder.js</code>. Move the mouse, click, type and drag, then compare the counters.
+    </p>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Try it</h2>
+        <input id="text" type="text" placeholder="Type here (text field)" autocomplete="off" />
+        <input id="password" type="password" placeholder="Password" autocomplete="off" />
+        <p><button id="widget-button" type="button">Third-party widget button</button></p>
+        <div id="drag-box">Drag inside / across this box</div>
+      </section>
+
+      <section class="card">
+        <h2>First-party listeners (must keep working)</h2>
+        <table id="first-party"></table>
+      </section>
+
+      <section class="card">
+        <h2>Third-party tracker (should be starved)</h2>
+        <table id="third-party"></table>
+        <p id="keylog" style="overflow-wrap: anywhere"></p>
+      </section>
+
+      <section class="card">
+        <h2>Self-hosted recorder (tracker by name)</h2>
+        <table id="recorder"></table>
+      </section>
+
+      <section class="card" style="grid-column: 1 / -1">
+        <h2>Invisibility checks</h2>
+        <table id="checks"></table>
+      </section>
+    </div>
+
+    <script src="common.js"></script>
+    <script>
+      // First-party code: must keep receiving everything.
+      const fp = counters("first-party");
+      for (const type of ["mousemove", "click", "keydown", "input", "wheel"]) {
+        document.addEventListener(type, () => fp.bump(type), { passive: true });
+      }
+      document.getElementById("text").addEventListener("input", () => fp.bump("input on field"));
+      const stamps = (window.fixture.stamps = { keydown: [], mousemove: [], now: performance.now() });
+      document.addEventListener("keydown", (e) => stamps.keydown.push(e.timeStamp));
+      document.addEventListener("mousemove", (e) => stamps.mousemove.length < 50 && stamps.mousemove.push(e.timeStamp));
+    </script>
+    <script src="http://127.0.0.1:8081/tracker.js"></script>
+    <script src="vendor/rrweb-recorder.js"></script>
+    <script src="checks.js"></script>
+  </body>
+</html>

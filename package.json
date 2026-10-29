@@ -1,0 +1,28 @@
+{
+  "name": "tracker-blocker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Privacy extension that stops websites and third-party scripts from tracking you, without breaking the sites you use.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node scripts/start.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . && node scripts/build.mjs && web-ext lint",
+    "test": "vitest run",
+    "test:e2e": "node scripts/build.mjs && node scripts/e2e.mjs",
+    "package": "node scripts/build.mjs && web-ext build --overwrite-dest",
+    "serve:fixtures": "node scripts/serve-fixtures.mjs"
+  },
+  "devDependencies": {
+    "@types/firefox-webext-browser": "^143.0.1",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.13.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.5",
+    "web-ext": "^10.8.0"
+  }
+}
